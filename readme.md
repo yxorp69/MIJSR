@@ -66,25 +66,3 @@ javascript:(function(){const JS_URL='https://cdn.jsdelivr.net/gh/yxorp69/MIJSR@m
    * Paste JavaScript into the textarea and click **Run** (or press **Ctrl+Enter**) — this executes the code in the original page.
    * Or type an **app name** (e.g. `example`) into the **Path** field and click **Fetch**. The UI will automatically fetch `apps/<name>.js` from this repo (so `example` → `apps/example.js`). Then click **Run**.
 3. The popup sends the code to the opener page, which verifies the popup’s secret token and executes the code.
-
-
-### apps/example.js
-
-```js
-// apps/example.js
-// Quick demo script for MIJSR
-(function(){
-  console.log('[MIJSR] apps/example.js running');
-  alert('MIJSR example executed — check console for details');
-  const els = document.querySelectorAll('p');
-  els.forEach(el => {
-    const origBg = el.style.backgroundColor;
-    el.style.backgroundColor = 'salmon';
-    setTimeout(()=> el.style.backgroundColor = origBg, 2000);
-  });
-})();
-```
-
----
-
-That's all — I updated the README in this doc and included the updated `ui.html`, console launcher, bookmarklet, and a sample `apps/example.js`. Copy any of the blocks into files in your repo (`ui.html` at root, `apps/example.js` under `apps/`) and the console/bookmarklet will load the UI via jsDelivr.
