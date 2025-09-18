@@ -1,78 +1,121 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <title>MIJSR</title>
-  <style>
-    body {
-      font-family: monospace;
-      background: #111;
-      color: #eee;
-      padding: 20px;
-    }
-    input, textarea, button {
-      display: block;
-      margin: 10px 0;
-      padding: 8px;
-      background: #222;
-      color: #eee;
-      border: 1px solid #444;
-      border-radius: 4px;
-    }
-    button {
-      cursor: pointer;
-    }
-  </style>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>MIJSR — Popup (Send to Opener)</title>
+<style>
+  :root{font-family:system-ui,Segoe UI,Roboto,Arial}
+  body{margin:12px;max-width:980px}
+  header{display:flex;gap:8px;align-items:center;margin-bottom:8px}
+  h1{font-size:16px;margin:0}
+  .row{display:flex;gap:8px;align-items:center}
+  input,button,textarea{font:inherit}
+  input{padding:6px;border-radius:6px;border:1px solid rgba(0,0,0,.12)}
+  button{padding:6px 10px;border-radius:8px;border:0;cursor:pointer}
+  textarea{width:100%;height:300px;padding:8px;margin-top:8px;border-radius:8px;border:1px solid rgba(0,0,0,.12);box-sizing:border-box;font-family:ui-monospace,monospace}
+  small{opacity:.7}
+  #status{font-size:12px;color:#444;margin-top:8px}
+</style>
 </head>
 <body>
-  <h2>MIJSR – Mini In-Browser JavaScript Runner</h2>
+  <header>
+    <h1>MIJSR — Popup</h1>
+    <div style="margin-left:auto">
+      <button id="closeBtn" title="Close popup">Close</button>
+    </div>
+  </header>
 
-  <label>Run custom JS:</label>
-  <textarea id="codeInput" rows="6" placeholder="Type JavaScript here..."></textarea>
-  <button onclick="runCode()">Run Code</button>
+  <div class="row">
+    <label style="width:260px">
+      App name (just the name; e.g. <code>example</code>)
+      <input id="app" placeholder="example" value="example" autocomplete="off">
+    </label>
+    <button id="fetchBtn">Fetch</button>
+    <button id="runBtn">Run on page</button>
+    <button id="copyBtn">Copy</button>
+  </div>
 
-  <hr>
+  <div><small>Type code or fetch an approved app by name. Run will execute that code in the page that opened this popup.</small></div>
+  <textarea id="code" placeholder="// your JS here — fetched script will appear here"></textarea>
 
-  <label>Run app by name (from yxorp69/MIJSR/apps):</label>
-  <input type="text" id="appName" placeholder="example">
-  <button onclick="runApp()">Run App</button>
+  <div id="status" aria-live="polite"></div>
 
-  <pre id="log"></pre>
+<script>
+(function(){
+  // SECRET replaced by launcher when the popup is written
+  const SECRET = '___MINI_RUN_SECRET___';
 
-  <script>
-    function log(msg) {
-      document.getElementById('log').textContent += msg + "\n";
+  const appEl = document.getElementById('app');
+  const codeEl = document.getElementById('code');
+  const fetchBtn = document.getElementById('fetchBtn');
+  const runBtn = document.getElementById('runBtn');
+  const copyBtn = document.getElementById('copyBtn');
+  const closeBtn = document.getElementById('closeBtn');
+  const statusEl = document.getElementById('status');
+
+  function setStatus(msg, transient=true){
+    statusEl.textContent = msg || '';
+    if(transient){
+      clearTimeout(setStatus._t);
+      setStatus._t = setTimeout(()=> statusEl.textContent = '', 3000);
     }
+  }
 
-    function runCode() {
-      try {
-        const code = document.getElementById('codeInput').value;
-        new Function(code)();
-        log("Custom code executed.");
-      } catch (e) {
-        log("Error: " + e.message);
-      }
-    }
+  function buildUrl(name){
+    const n = (name||'').trim();
+    if(!n) return '';
+    return 'https://cdn.jsdelivr.net/gh/yxorp69/MIJSR@main/apps/' + encodeURIComponent(n) + '.js';
+  }
 
-    function runApp() {
-      const appName = document.getElementById('appName').value.trim();
-      if (!appName) {
-        log("Please enter an app name.");
-        return;
-      }
-      const url = `https://cdn.jsdelivr.net/gh/yxorp69/MIJSR/apps/${appName}.js`;
-      log("Fetching app: " + appName);
-      fetch(url, {cache: "no-store"})
-        .then(r => {
-          if (!r.ok) throw new Error("HTTP " + r.status);
-          return r.text();
-        })
-        .then(code => {
-          new Function(code)();
-          log("App executed: " + appName);
-        })
-        .catch(e => log("Failed to load app: " + e.message));
+  async function fetchApp(){
+    const name = appEl.value.trim();
+    if(!name){ setStatus('enter an app name'); return null; }
+    const url = buildUrl(name);
+    setStatus('fetching: ' + url, true);
+    try{
+      const res = await fetch(url, {cache:'no-store'});
+      if(!res.ok) throw new Error(res.status + ' ' + res.statusText);
+      const txt = await res.text();
+      codeEl.value = txt;
+      setStatus('fetched ✔');
+      return txt;
+    }catch(err){
+      codeEl.value = '// fetch error: ' + err;
+      setStatus('fetch failed', true);
+      return null;
     }
-  </script>
+  }
+
+  // Send code to opener to execute in page context
+  function sendToOpener(){
+    if(!window.opener || window.opener.closed){
+      alert('Opener page not available. Open this popup from the page you want to run code in.');
+      return;
+    }
+    const code = codeEl.value || '';
+    if(!code.trim()){ setStatus('no code to send'); return; }
+    const payload = { type: 'mini-run', secret: SECRET, code };
+    try{
+      window.opener.postMessage(payload, '*');
+      setStatus('sent to opener', true);
+      runBtn.textContent = 'Sent';
+      setTimeout(()=> runBtn.textContent = 'Run on page', 700);
+    }catch(e){
+      alert('Send failed: ' + e);
+    }
+  }
+
+  fetchBtn.addEventListener('click', fetchApp);
+  runBtn.addEventListener('click', sendToOpener);
+  copyBtn.addEventListener('click', ()=> navigator.clipboard.writeText(codeEl.value).then(()=> setStatus('copied', true)).catch(()=> setStatus('copy failed', true)));
+  closeBtn.addEventListener('click', ()=> window.close());
+
+  appEl.addEventListener('keydown', (e)=> { if(e.key==='Enter' && !e.shiftKey){ e.preventDefault(); fetchApp().then(()=> codeEl.focus()); } });
+  codeEl.addEventListener('keydown', (e)=> { if(e.key==='Enter' && e.ctrlKey) { e.preventDefault(); sendToOpener(); } });
+
+  try{ appEl.select(); }catch(e){}
+})();
+</script>
 </body>
 </html>
