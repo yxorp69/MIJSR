@@ -17,6 +17,7 @@
   small{opacity:.7}
   #status{font-size:12px;color:#444;margin-top:8px}
   pre#log{background:#f6f6f6;padding:8px;border-radius:6px;max-height:160px;overflow:auto}
+  code{background:#eee;padding:2px 6px;border-radius:4px}
 </style>
 </head>
 <body>
@@ -45,7 +46,6 @@
 
 <script>
 (function(){
-  // SECRET inserted by opener when writing the HTML. Default placeholder stays empty.
   const SECRET = '___MINI_RUN_SECRET___';
   const REPO_BASE = 'https://cdn.jsdelivr.net/gh/yxorp69/MIJSR@main/apps/';
 
@@ -58,7 +58,6 @@
     logEl.textContent += msg + '\\n';
     logEl.scrollTop = logEl.scrollHeight;
   }
-
   function setStatus(msg, clearAfterMs){
     statusEl.textContent = msg || '';
     if(clearAfterMs){
@@ -66,11 +65,9 @@
       setStatus._t = setTimeout(()=> statusEl.textContent = '', clearAfterMs);
     }
   }
-
   function buildAppUrl(name){
     const n = (name||'').trim();
     if(!n) return '';
-    // only allow simple names: letters, numbers, -, _
     if(!/^[A-Za-z0-9_-]+$/.test(n)) return '';
     return REPO_BASE + encodeURIComponent(n) + '.js';
   }
@@ -78,10 +75,7 @@
   async function fetchAndPopulate(){
     const name = appEl.value.trim();
     const url = buildAppUrl(name);
-    if(!url){
-      alert('Invalid app name. Use simple name like: example');
-      return null;
-    }
+    if(!url){ alert('Invalid app name. Use simple name like: example'); return null; }
     setStatus('fetching: ' + url, 0);
     log('→ fetching ' + url);
     try{
@@ -100,28 +94,42 @@
     }
   }
 
-  // Post code to opener page (preferred)
-  function postToOpener(code){
-    if(window.opener && !window.opener.closed){
-      try{
-        window.opener.postMessage({ type: 'mini-run', secret: SECRET, code: code }, '*');
-        log('→ posted code to opener (will run in page context)');
-        setStatus('sent to opener', 1200);
+  // Preferred execution: direct call into opener's __mijsr_exec (runs in page)
+  function tryDirectExec(code){
+    try{
+      if(window.opener && !window.opener.closed && typeof window.opener.__mijsr_exec === 'function'){
+        window.opener.__mijsr_exec(code);
+        log('✔ executed via opener.__mijsr_exec (page context)');
+        setStatus('executed in page', 1200);
         return true;
-      }catch(e){
-        log('✖ postMessage failed: ' + e);
-        return false;
       }
+    }catch(e){
+      log('✖ direct exec failed: ' + e);
+      // continue to fallback
     }
     return false;
   }
 
-  // Local fallback: run inside popup (only if opener not available)
+  // Fallback postMessage (opener must have the listener with matching SECRET)
+  function tryPostMessage(code){
+    try{
+      if(window.opener && !window.opener.closed){
+        window.opener.postMessage({ type: 'mini-run', secret: SECRET, code: code }, '*');
+        log('→ posted code to opener via postMessage');
+        setStatus('posted to opener', 1200);
+        return true;
+      }
+    }catch(e){
+      log('✖ postMessage to opener failed: ' + e);
+    }
+    return false;
+  }
+
+  // Last fallback: run inside popup
   function runInPopup(code){
     try{
-      // Use Function so it's not affected by CSP eval-disabled in some contexts
       new Function(code)();
-      log('✔ executed inside popup (fallback) — check popup console for logs');
+      log('✔ executed inside popup (fallback)');
       setStatus('ran in popup (fallback)', 2000);
     }catch(e){
       log('✖ execution error: ' + e);
@@ -129,10 +137,8 @@
     }
   }
 
-  // Fetch button
   fetchBtn.addEventListener('click', fetchAndPopulate);
 
-  // Enter in app input triggers fetch
   appEl.addEventListener('keydown', function(e){
     if(e.key === 'Enter' && !e.shiftKey){
       e.preventDefault();
@@ -141,7 +147,6 @@
     }
   });
 
-  // Run button: if textarea empty, fetch then run; otherwise run directly
   runBtn.addEventListener('click', async function(){
     let code = codeEl.value.trim();
     if(!code){
@@ -150,12 +155,11 @@
       if(!fetched){ setStatus('abort: nothing to run', 1600); return; }
       code = codeEl.value;
     }
-    // Try send to opener (preferred). If opener doesn't exist, run locally.
-    const posted = postToOpener(code);
-    if(!posted){
-      log('No opener available: running in popup (fallback).');
-      runInPopup(code);
-    }
+    // Try direct exec first, then postMessage, then local
+    if(tryDirectExec(code)) return;
+    if(tryPostMessage(code)) return;
+    log('No opener available: running in popup (fallback).');
+    runInPopup(code);
   });
 
   copyBtn.addEventListener('click', async ()=>{
@@ -174,7 +178,7 @@
     if(ev.ctrlKey && ev.key === 'Enter') runBtn.click();
   });
 
-  // Allow opener to set app/code via postMessage (optional)
+  // allow opener to set app/code via postMessage if needed
   window.addEventListener('message', (e)=>{
     try{
       const d = e.data;
@@ -185,7 +189,6 @@
     }catch(err){}
   });
 
-  // UX: focus and select app input on open
   try{ appEl.select(); }catch(e){}
 })();
 </script>
