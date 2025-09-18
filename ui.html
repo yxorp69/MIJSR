@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>MIJSR</title>
+  <style>
+    body {
+      font-family: monospace;
+      background: #111;
+      color: #eee;
+      padding: 20px;
+    }
+    input, textarea, button {
+      display: block;
+      margin: 10px 0;
+      padding: 8px;
+      background: #222;
+      color: #eee;
+      border: 1px solid #444;
+      border-radius: 4px;
+    }
+    button {
+      cursor: pointer;
+    }
+  </style>
+</head>
+<body>
+  <h2>MIJSR – Mini In-Browser JavaScript Runner</h2>
+
+  <label>Run custom JS:</label>
+  <textarea id="codeInput" rows="6" placeholder="Type JavaScript here..."></textarea>
+  <button onclick="runCode()">Run Code</button>
+
+  <hr>
+
+  <label>Run app by name (from yxorp69/MIJSR/apps):</label>
+  <input type="text" id="appName" placeholder="example">
+  <button onclick="runApp()">Run App</button>
+
+  <pre id="log"></pre>
+
+  <script>
+    function log(msg) {
+      document.getElementById('log').textContent += msg + "\n";
+    }
+
+    function runCode() {
+      try {
+        const code = document.getElementById('codeInput').value;
+        new Function(code)();
+        log("Custom code executed.");
+      } catch (e) {
+        log("Error: " + e.message);
+      }
+    }
+
+    function runApp() {
+      const appName = document.getElementById('appName').value.trim();
+      if (!appName) {
+        log("Please enter an app name.");
+        return;
+      }
+      const url = `https://cdn.jsdelivr.net/gh/yxorp69/MIJSR/apps/${appName}.js`;
+      log("Fetching app: " + appName);
+      fetch(url, {cache: "no-store"})
+        .then(r => {
+          if (!r.ok) throw new Error("HTTP " + r.status);
+          return r.text();
+        })
+        .then(code => {
+          new Function(code)();
+          log("App executed: " + appName);
+        })
+        .catch(e => log("Failed to load app: " + e.message));
+    }
+  </script>
+</body>
+</html>
