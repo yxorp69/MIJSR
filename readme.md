@@ -15,22 +15,49 @@ This repo provides a tiny popup UI (`ui.html`) that you can open from a **consol
 Paste the block below into DevTools → **Console** and press Enter:
 
 ```js
+// MIJSR launcher (console) — installs direct exec on the page + opens popup
 (async ()=>{
   const JS_PATH = 'https://cdn.jsdelivr.net/gh/yxorp69/MIJSR@main/ui.html';
   const SECRET = Math.random().toString(36).slice(2);
-  if(!window.__miniRunListenerInstalled){
-    window.__miniRunListenerInstalled = true;
-    window.addEventListener('message', function miniRunHandler(e){
+
+  // install only once
+  if(!window.__mijsr_installed){
+    window.__mijsr_installed = true;
+
+    // Direct executor callable by popup: runs code in page context.
+    // We intentionally use Function to get top-level scope (not arrow).
+    window.__mijsr_exec = function(code){
+      try{
+        // optional: limit visible errors and return result
+        return (new Function(code))();
+      }catch(e){
+        // surface error to page console
+        console.error('[MIJSR] exec error:', e);
+        throw e;
+      }
+    };
+
+    // postMessage handler (keeps compatibility)
+    window.addEventListener('message', function mijsr_msg(e){
       try{
         const d = e.data;
         if(!d || d.type !== 'mini-run' || d.secret !== SECRET) return;
-        try{ eval(d.code); }
-        catch(err){ console.error('mini-run eval error:', err); try{ alert('mini-run eval error: '+err);}catch(e){} }
+        try{
+          // use the same executor to run
+          window.__mijsr_exec(d.code);
+        }catch(err){
+          console.error('[MIJSR] mini-run eval error:', err);
+          try{ alert('mini-run eval error: '+err); }catch(e){}
+        }
       }catch(ex){ console.error(ex); }
     }, false);
-    console.log('mini-run listener installed.');
-  } else console.log('mini-run listener already installed.');
 
+    console.log('[MIJSR] installer: __mijsr_exec added and message listener installed.');
+  } else {
+    console.log('[MIJSR] already installed.');
+  }
+
+  // open popup
   const w = window.open('about:blank', 'mini-run-popup', 'width=900,height=560');
   if(!w){ alert('Popup blocked — allow popups for this site'); return; }
 
@@ -39,10 +66,11 @@ Paste the block below into DevTools → **Console** and press Enter:
     if(!res.ok) throw new Error(res.status + ' ' + res.statusText);
     let txt = await res.text();
     txt = txt.replace(/___MINI_RUN_SECRET___/g, SECRET);
+    // ensure ui focuses app input by name — ui handles that
     txt = txt.replace(/__DEFAULT_REPO__/g, 'yxorp69/MIJSR@main');
     w.document.open(); w.document.write(txt); w.document.close(); w.focus();
   }catch(err){
-    console.error('Failed to load UI:', err);
+    console.error('[MIJSR] Failed to load UI:', err);
     alert('Failed to load UI: ' + err);
   }
 })();
@@ -53,7 +81,8 @@ Paste the block below into DevTools → **Console** and press Enter:
 Create a bookmark and paste this entire string into the bookmark’s **URL** field. Click the bookmark to open the UI.
 
 ```
-javascript:(function(){const JS_URL='https://cdn.jsdelivr.net/gh/yxorp69/MIJSR@main/ui.html';const SECRET=Math.random().toString(36).slice(2);if(window.__miniRunListenerInstalled){console.log('mini-run listener already installed.');}else{window.__miniRunListenerInstalled=true;window.addEventListener('message',function(e){try{const d=e.data;if(!d||d.type!=='mini-run'||d.secret!==SECRET)return;try{eval(d.code);}catch(err){console.error('mini-run eval error:',err);try{alert('mini-run eval error: '+err);}catch(e){}}}catch(ex){console.error(ex);}},false);console.log('mini-run listener installed.');}const w=window.open('about:blank','mini-run-popup','width=900,height=560');if(!w){alert('Popup blocked — allow popups');return;}fetch(JS_URL,{cache:'no-store'}).then(function(r){if(!r.ok)throw new Error(r.status+' '+r.statusText);return r.text();}).then(function(t){t=t.replace(/___MINI_RUN_SECRET___/g,SECRET);t=t.replace(/__DEFAULT_REPO__/g,'yxorp69/MIJSR@main');w.document.open();w.document.write(t);w.document.close();w.focus();}).catch(function(e){console.error('load UI failed',e);alert('load UI failed: '+e);});})();
+javascript:(function(){const JS_URL='https://cdn.jsdelivr.net/gh/yxorp69/MIJSR@main/ui.html';const SECRET=Math.random().toString(36).slice(2);if(!window.__mijsr_installed){window.__mijsr_installed=true;window.__mijsr_exec=function(code){try{return (new Function(code))();}catch(e){console.error('[MIJSR] exec error:',e);throw e;}};window.addEventListener('message',function(e){try{const d=e.data;if(!d||d.type!=='mini-run'||d.secret!==SECRET)return;window.__mijsr_exec(d.code);}catch(err){console.error(err);}},false);console.log('[MIJSR] installer: __mijsr_exec added.');}else console.log('[MIJSR] already installed.');var w=window.open('about:blank','mini-run-popup','width=900,height=560');if(!w){alert('Popup blocked — allow popups');return;}fetch(JS_URL,{cache:'no-store'}).then(r=>{if(!r.ok)throw new Error(r.status+' '+r.statusText);return r.text()}).then(t=>{t=t.replace(/___MINI_RUN_SECRET___/g,SECRET);t=t.replace(/__DEFAULT_REPO__/g,'yxorp69/MIJSR@main');w.document.open();w.document.write(t);w.document.close();w.focus();}).catch(e=>{console.error('load UI failed',e);alert('load UI failed: '+e);});})();
+
 ```
 
 ---
