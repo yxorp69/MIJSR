@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width,initial-scale=1" />
-<title>MIJSR — Popup (Send to Opener)</title>
+<title>MIJSR — Mini Runner</title>
 <style>
   :root{font-family:system-ui,Segoe UI,Roboto,Arial}
   body{margin:12px;max-width:980px}
@@ -13,107 +13,179 @@
   input,button,textarea{font:inherit}
   input{padding:6px;border-radius:6px;border:1px solid rgba(0,0,0,.12)}
   button{padding:6px 10px;border-radius:8px;border:0;cursor:pointer}
-  textarea{width:100%;height:300px;padding:8px;margin-top:8px;border-radius:8px;border:1px solid rgba(0,0,0,.12);box-sizing:border-box;font-family:ui-monospace,monospace}
+  textarea{width:100%;height:260px;padding:8px;margin-top:8px;border-radius:8px;border:1px solid rgba(0,0,0,.12);box-sizing:border-box;font-family:ui-monospace,monospace}
   small{opacity:.7}
   #status{font-size:12px;color:#444;margin-top:8px}
+  pre#log{background:#f6f6f6;padding:8px;border-radius:6px;max-height:160px;overflow:auto}
 </style>
 </head>
 <body>
   <header>
-    <h1>MIJSR — Popup</h1>
+    <h1>MIJSR — Mini Runner</h1>
     <div style="margin-left:auto">
       <button id="closeBtn" title="Close popup">Close</button>
     </div>
   </header>
 
   <div class="row">
-    <label style="width:260px">
+    <label style="flex:1">
       App name (just the name; e.g. <code>example</code>)
       <input id="app" placeholder="example" value="example" autocomplete="off">
     </label>
     <button id="fetchBtn">Fetch</button>
-    <button id="runBtn">Run on page</button>
+    <button id="runBtn">Run</button>
     <button id="copyBtn">Copy</button>
   </div>
 
-  <div><small>Type code or fetch an approved app by name. Run will execute that code in the page that opened this popup.</small></div>
+  <div><small>Paste JS below to run custom script, or type an app name and press Run (it will fetch from <code>yxorp69/MIJSR/apps/&lt;name&gt;.js</code>).</small></div>
   <textarea id="code" placeholder="// your JS here — fetched script will appear here"></textarea>
 
   <div id="status" aria-live="polite"></div>
+  <pre id="log" aria-live="polite"></pre>
 
 <script>
 (function(){
-  // SECRET replaced by launcher when the popup is written
+  // SECRET inserted by opener when writing the HTML. Default placeholder stays empty.
   const SECRET = '___MINI_RUN_SECRET___';
+  const REPO_BASE = 'https://cdn.jsdelivr.net/gh/yxorp69/MIJSR@main/apps/';
 
-  const appEl = document.getElementById('app');
-  const codeEl = document.getElementById('code');
-  const fetchBtn = document.getElementById('fetchBtn');
-  const runBtn = document.getElementById('runBtn');
-  const copyBtn = document.getElementById('copyBtn');
-  const closeBtn = document.getElementById('closeBtn');
-  const statusEl = document.getElementById('status');
+  const $ = id => document.getElementById(id);
+  const appEl = $('app'), codeEl = $('code');
+  const fetchBtn = $('fetchBtn'), runBtn = $('runBtn'), copyBtn = $('copyBtn'), closeBtn = $('closeBtn');
+  const statusEl = $('status'), logEl = $('log');
 
-  function setStatus(msg, transient=true){
+  function log(msg){
+    logEl.textContent += msg + '\\n';
+    logEl.scrollTop = logEl.scrollHeight;
+  }
+
+  function setStatus(msg, clearAfterMs){
     statusEl.textContent = msg || '';
-    if(transient){
+    if(clearAfterMs){
       clearTimeout(setStatus._t);
-      setStatus._t = setTimeout(()=> statusEl.textContent = '', 3000);
+      setStatus._t = setTimeout(()=> statusEl.textContent = '', clearAfterMs);
     }
   }
 
-  function buildUrl(name){
+  function buildAppUrl(name){
     const n = (name||'').trim();
     if(!n) return '';
-    return 'https://cdn.jsdelivr.net/gh/yxorp69/MIJSR@main/apps/' + encodeURIComponent(n) + '.js';
+    // only allow simple names: letters, numbers, -, _
+    if(!/^[A-Za-z0-9_-]+$/.test(n)) return '';
+    return REPO_BASE + encodeURIComponent(n) + '.js';
   }
 
-  async function fetchApp(){
+  async function fetchAndPopulate(){
     const name = appEl.value.trim();
-    if(!name){ setStatus('enter an app name'); return null; }
-    const url = buildUrl(name);
-    setStatus('fetching: ' + url, true);
+    const url = buildAppUrl(name);
+    if(!url){
+      alert('Invalid app name. Use simple name like: example');
+      return null;
+    }
+    setStatus('fetching: ' + url, 0);
+    log('→ fetching ' + url);
     try{
-      const res = await fetch(url, {cache:'no-store'});
-      if(!res.ok) throw new Error(res.status + ' ' + res.statusText);
-      const txt = await res.text();
+      const r = await fetch(url, {cache:'no-store'});
+      if(!r.ok) throw new Error(r.status + ' ' + r.statusText);
+      const txt = await r.text();
       codeEl.value = txt;
-      setStatus('fetched ✔');
+      setStatus('fetched ✔', 1600);
+      log('✔ fetched ' + name);
       return txt;
-    }catch(err){
-      codeEl.value = '// fetch error: ' + err;
-      setStatus('fetch failed', true);
+    }catch(e){
+      codeEl.value = '// fetch error: ' + e;
+      setStatus('fetch failed', 1600);
+      log('✖ fetch failed: ' + e);
       return null;
     }
   }
 
-  // Send code to opener to execute in page context
-  function sendToOpener(){
-    if(!window.opener || window.opener.closed){
-      alert('Opener page not available. Open this popup from the page you want to run code in.');
-      return;
+  // Post code to opener page (preferred)
+  function postToOpener(code){
+    if(window.opener && !window.opener.closed){
+      try{
+        window.opener.postMessage({ type: 'mini-run', secret: SECRET, code: code }, '*');
+        log('→ posted code to opener (will run in page context)');
+        setStatus('sent to opener', 1200);
+        return true;
+      }catch(e){
+        log('✖ postMessage failed: ' + e);
+        return false;
+      }
     }
-    const code = codeEl.value || '';
-    if(!code.trim()){ setStatus('no code to send'); return; }
-    const payload = { type: 'mini-run', secret: SECRET, code };
+    return false;
+  }
+
+  // Local fallback: run inside popup (only if opener not available)
+  function runInPopup(code){
     try{
-      window.opener.postMessage(payload, '*');
-      setStatus('sent to opener', true);
-      runBtn.textContent = 'Sent';
-      setTimeout(()=> runBtn.textContent = 'Run on page', 700);
+      // Use Function so it's not affected by CSP eval-disabled in some contexts
+      new Function(code)();
+      log('✔ executed inside popup (fallback) — check popup console for logs');
+      setStatus('ran in popup (fallback)', 2000);
     }catch(e){
-      alert('Send failed: ' + e);
+      log('✖ execution error: ' + e);
+      setStatus('execution error', 2000);
     }
   }
 
-  fetchBtn.addEventListener('click', fetchApp);
-  runBtn.addEventListener('click', sendToOpener);
-  copyBtn.addEventListener('click', ()=> navigator.clipboard.writeText(codeEl.value).then(()=> setStatus('copied', true)).catch(()=> setStatus('copy failed', true)));
+  // Fetch button
+  fetchBtn.addEventListener('click', fetchAndPopulate);
+
+  // Enter in app input triggers fetch
+  appEl.addEventListener('keydown', function(e){
+    if(e.key === 'Enter' && !e.shiftKey){
+      e.preventDefault();
+      fetchBtn.click();
+      setTimeout(()=> codeEl.focus(), 200);
+    }
+  });
+
+  // Run button: if textarea empty, fetch then run; otherwise run directly
+  runBtn.addEventListener('click', async function(){
+    let code = codeEl.value.trim();
+    if(!code){
+      setStatus('no code — fetching first...', 0);
+      const fetched = await fetchAndPopulate();
+      if(!fetched){ setStatus('abort: nothing to run', 1600); return; }
+      code = codeEl.value;
+    }
+    // Try send to opener (preferred). If opener doesn't exist, run locally.
+    const posted = postToOpener(code);
+    if(!posted){
+      log('No opener available: running in popup (fallback).');
+      runInPopup(code);
+    }
+  });
+
+  copyBtn.addEventListener('click', async ()=>{
+    try{
+      await navigator.clipboard.writeText(codeEl.value);
+      log('Copied code to clipboard');
+      setStatus('copied', 1200);
+    }catch(e){
+      log('✖ copy failed: ' + e);
+    }
+  });
+
   closeBtn.addEventListener('click', ()=> window.close());
 
-  appEl.addEventListener('keydown', (e)=> { if(e.key==='Enter' && !e.shiftKey){ e.preventDefault(); fetchApp().then(()=> codeEl.focus()); } });
-  codeEl.addEventListener('keydown', (e)=> { if(e.key==='Enter' && e.ctrlKey) { e.preventDefault(); sendToOpener(); } });
+  codeEl.addEventListener('keydown', (ev) => {
+    if(ev.ctrlKey && ev.key === 'Enter') runBtn.click();
+  });
 
+  // Allow opener to set app/code via postMessage (optional)
+  window.addEventListener('message', (e)=>{
+    try{
+      const d = e.data;
+      if(d && d.type === 'mini-run-ctrl' && d.secret === SECRET){
+        if(d.app) appEl.value = d.app;
+        if(d.code) codeEl.value = d.code;
+      }
+    }catch(err){}
+  });
+
+  // UX: focus and select app input on open
   try{ appEl.select(); }catch(e){}
 })();
 </script>
